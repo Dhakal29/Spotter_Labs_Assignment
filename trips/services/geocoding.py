@@ -20,13 +20,21 @@ def is_within_contiguous_bounds(lat: float, lon: float) -> bool:
     )
 
 
+# Categories that represent valid geographic destinations for trip routing
+VALID_PLACE_CLASSES = {"boundary", "place", "highway", "waterway"}
+DISALLOWED_CLASSES = {"amenity", "shop", "tourism", "leisure", "office", "craft"}
+
+
 def geocode_place(location_name: str) -> dict:
     """
-    Geocodes a place name string (e.g. 'Austin, TX') strictly within the USA.
+    Geocodes a place name string (e.g. 'Austin, TX' or '90210') strictly within the USA.
+    Ensures the matched location is a geographic destination (city, town, state, county, postcode),
+    not a commercial point of interest like a restaurant or shop.
     Returns a dict with:
+        - 'name': str
+        - 'display_name': str
         - 'lat': float
         - 'lon': float
-        - 'display_name': str
     Raises ValueError if the location is not found or is outside the USA.
     """
     clean_name = location_name.strip()
@@ -36,8 +44,9 @@ def geocode_place(location_name: str) -> dict:
     params = {
         "q": clean_name,
         "format": "json",
-        "limit": 1,
+        "limit": 5,
         "countrycodes": "us",
+        "addressdetails": 1,
     }
 
     try:
@@ -50,9 +59,34 @@ def geocode_place(location_name: str) -> dict:
     if not results:
         raise ValueError(f"Location '{location_name}' could not be found within the USA.")
 
-    first_hit = results[0]
-    lat = float(first_hit["lat"])
-    lon = float(first_hit["lon"])
+    # Filter out commercial amenities/shops, prioritize genuine geographic places
+    selected_hit = None
+    for hit in results:
+        hit_class = hit.get("class", "")
+        if hit_class in DISALLOWED_CLASSES:
+            continue
+        if hit_class in VALID_PLACE_CLASSES or hit.get("addresstype") in {
+            "city",
+            "town",
+            "village",
+            "hamlet",
+            "suburb",
+            "county",
+            "state",
+            "postcode",
+            "road",
+            "motorway",
+        }:
+            selected_hit = hit
+            break
+
+    if not selected_hit:
+        raise ValueError(
+            f"Location '{location_name}' does not match any valid geographic city or region in the USA."
+        )
+
+    lat = float(selected_hit["lat"])
+    lon = float(selected_hit["lon"])
 
     if not is_within_contiguous_bounds(lat, lon):
         raise ValueError(
@@ -61,7 +95,8 @@ def geocode_place(location_name: str) -> dict:
 
     return {
         "name": location_name,
-        "display_name": first_hit.get("display_name", location_name),
+        "display_name": selected_hit.get("display_name", location_name),
         "lat": lat,
         "lon": lon,
     }
+
