@@ -95,24 +95,26 @@ def find_stations_along_route(
         return []
 
     # Calculate cumulative mile markers along the polyline segments
-    sampled_segments: List[Tuple[float, float, float, float, float, float]] = []
-    # (a_lat, a_lon, a_mile, b_lat, b_lon, b_mile)
-
-    cumulative_mile = 0.0
-    prev_pt = route_coords[0]
-    prev_mile = 0.0
-
+    # First, calculate cumulative miles for all points
+    point_miles: List[float] = [0.0]
     for i in range(1, len(route_coords)):
-        curr_pt = route_coords[i]
-        seg_dist = haversine_distance_miles(prev_pt[0], prev_pt[1], curr_pt[0], curr_pt[1])
-        cumulative_mile += seg_dist
+        dist = haversine_distance_miles(
+            route_coords[i - 1][0], route_coords[i - 1][1],
+            route_coords[i][0], route_coords[i][1]
+        )
+        point_miles.append(point_miles[-1] + dist)
 
+    # Now create sampled segments: (a_lat, a_lon, a_mile, b_lat, b_lon, b_mile)
+    sampled_segments: List[Tuple[float, float, float, float, float, float]] = []
+    seg_start_idx = 0
+    for i in range(1, len(route_coords)):
         if i % sample_interval == 0 or i == len(route_coords) - 1:
+            a_pt = route_coords[seg_start_idx]
+            b_pt = route_coords[i]
             sampled_segments.append(
-                (prev_pt[0], prev_pt[1], prev_mile, curr_pt[0], curr_pt[1], cumulative_mile)
+                (a_pt[0], a_pt[1], point_miles[seg_start_idx], b_pt[0], b_pt[1], point_miles[i])
             )
-            prev_pt = curr_pt
-            prev_mile = cumulative_mile
+            seg_start_idx = i
 
     stations_along_route = []
 
