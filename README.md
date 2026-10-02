@@ -27,7 +27,12 @@ A production-grade Django REST API that calculates driving routes between two US
    - Geocoding powered by OpenStreetMap Nominatim with strict `countrycodes=us`.
    - Filters out commercial POIs (cafes, shops) and validates against the contiguous USA bounding box (`lat: 24.39 to 49.38`, `lon: -125.0 to -66.93`).
    - Uses an in-memory cache to prevent Nominatim rate-limits on repeated queries.
-   - Rejects identical start and finish inputs (`HTTP 400`).
+    - Rejects identical start and finish inputs (`HTTP 400`).
+
+5. **Technology Stack & Django Version**:
+   - **Python**: 3.12 (modern runtime used in Dockerfile `python:3.12-slim`).
+   - **Django**: `5.2.17` — the official latest stable release on PyPI (verified live via PyPI index; Django 6.x is not released yet).
+
 
 ---
 
