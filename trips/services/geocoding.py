@@ -1,3 +1,4 @@
+import hashlib
 import requests
 from django.core.cache import cache
 
@@ -37,7 +38,8 @@ def geocode_place(location_name: str) -> dict:
     if not clean_name:
         raise ValueError("Location name cannot be empty.")
 
-    cache_key = f"geocode:{clean_name.lower()}"
+    key_hash = hashlib.md5(clean_name.lower().encode("utf-8")).hexdigest()
+    cache_key = f"geocode_{key_hash}"
     cached_result = cache.get(cache_key)
     if cached_result:
         return cached_result

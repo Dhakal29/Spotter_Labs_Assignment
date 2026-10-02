@@ -10,3 +10,4 @@ staticfiles/
 .DS_Store
 example.json
 db_data/
+.gitignore
