@@ -2,7 +2,8 @@ from pathlib import Path
 from decimal import Decimal
 import openpyxl
 import pgeocode
-from django.core.management.base import BaseCommand
+from django.core.management.base import BaseCommand, CommandError
+from django.db import transaction
 from trips.models import FuelStation
 
 
@@ -25,8 +26,10 @@ class Command(BaseCommand):
     def handle(self, *args, **options):
         file_path = Path(options["file"])
         if not file_path.exists():
-            self.stderr.write(self.style.ERROR(f"File not found: {file_path}"))
-            return
+            raise CommandError(
+                f"Fuel price file not found at '{file_path}'. "
+                "Please ensure 'fuel-prices-for-be-assessment.xlsx' exists in the project root."
+            )
 
         if options["clear"]:
             count = FuelStation.objects.count()
@@ -101,9 +104,10 @@ class Command(BaseCommand):
             )
             stations_to_create.append(station)
 
-        # Batch insert into database
+        # Batch insert into database within an atomic transaction
         self.stdout.write(f"Bulk inserting {len(stations_to_create)} stations into database...")
-        FuelStation.objects.bulk_create(stations_to_create, batch_size=2000)
+        with transaction.atomic():
+            FuelStation.objects.bulk_create(stations_to_create, batch_size=2000)
 
         self.stdout.write(
             self.style.SUCCESS(

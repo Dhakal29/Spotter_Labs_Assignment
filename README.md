@@ -1,32 +1,33 @@
 # Spotter Labs - Fuel-Optimized Route Planner API
 
-A production-ready Django REST API that calculates driving routes between two US locations, identifies cost-effective fuel stops based on retail fuel prices, respects vehicle range constraints (500 miles max range, 10 MPG), and provides the total money spent on fuel.
+A production-grade Django REST API that calculates driving routes between two US locations, identifies cost-effective fuel stops based on retail fuel prices, respects vehicle range constraints (500 miles max range, 10 MPG), and provides the total money spent on fuel.
 
 ---
 
-## Key Features & Constraints Met
+## Highlights & Architectural Decisions
 
-1. **Start & Finish Within the USA**:
-   - Geocodes human-readable locations (e.g., `"Austin, TX"`, `"Denver, CO"`) using Nominatim with `countrycodes=us`.
-   - Filters out non-geographic entities (restaurants, shops) and validates against the contiguous USA bounding box (`lat: 24.39 to 49.38`, `lon: -125.0 to -66.93`).
+1. **Routing Strategy (Strictly 1 Free API Call)**:
+   - Uses **OSRM (Open Source Routing Machine)** public demo cluster.
+   - Fetches the entire route geometry, distance, and duration in **exactly 1 single HTTP request** without requiring API keys or rate limits.
 
-2. **100% Free Routing API with Exactly 1 Call**:
-   - Integrates **OSRM (Open Source Routing Machine)**.
-   - Requires **no API key / registration**.
-   - Fetches the entire route geometry, distance, and duration in **exactly 1 single HTTP request**.
+2. **Next-Cheaper-Station Fuel Optimization Algorithm**:
+   - Vehicle starts at mile 0 with a **full tank (500 miles range / 50 gallons)**.
+   - Fuel consumed from the starting tank is priced at the cheapest reachable station near the origin.
+   - Instead of naive heuristic fill-ups that overpay, the algorithm looks ahead up to 500 miles for the first cheaper station:
+     - **If a cheaper station exists ahead**: purchases **only enough fuel** to reach that cheaper station.
+     - **If no cheaper station exists ahead**: recognizes the current stop as a local price minimum and fills to the maximum 500-mile capacity.
+     - **If destination is within reach**: buys only what is strictly needed to reach the destination.
+   - **Infeasible Route Detection**: If any segment between reachable stations exceeds 500 miles, the API responds with **HTTP 422 Unprocessable Entity** rather than pretending the vehicle could travel beyond tank capacity.
 
-3. **Fuel Price Dataset & Local Spatial Index**:
-   - Ingests `fuel-prices-for-be-assessment.xlsx` (7,524 US fuel stations) into SQLite with coordinates.
-   - Performs corridor spatial lookups in local memory and SQLite (~2 ms) without hitting external rate limits.
+3. **Spatial Corridor Projection**:
+   - Stations from `fuel-prices-for-be-assessment.xlsx` (7,524 US fuel stations) are indexed in SQLite.
+   - Corridor matching projects candidate stations directly onto polyline line segments using planar vector projection, accurately calculating perpendicular distance and mile markers along the highway.
 
-4. **Greedy Fuel Optimization Algorithm**:
-   - **Max Vehicle Range**: 500 miles.
-   - **Fuel Economy**: 10 Miles Per Gallon (MPG).
-   - Starts with a full tank (500-mile range).
-   - Strategically refills at the cheapest reachable stations along the road, outputting gallons refueled and dollar cost per stop.
-
-5. **Compact Map Geometry**:
-   - Returns both Google-compatible `encoded_polyline` and sampled GeoJSON LineString (reduced from 3.2 MB down to ~23 KB for fast responses).
+4. **US Geocoding & Validation**:
+   - Geocoding powered by OpenStreetMap Nominatim with strict `countrycodes=us`.
+   - Filters out commercial POIs (cafes, shops) and validates against the contiguous USA bounding box (`lat: 24.39 to 49.38`, `lon: -125.0 to -66.93`).
+   - Uses an in-memory cache to prevent Nominatim rate-limits on repeated queries.
+   - Rejects identical start and finish inputs (`HTTP 400`).
 
 ---
 
@@ -35,67 +36,62 @@ A production-ready Django REST API that calculates driving routes between two US
 ```text
 Spotter_Labs_Assignment/
 ├── core/
-│   ├── settings.py           # Project settings & .env loading
+│   ├── settings.py           # Project settings, DB path config, cache
 │   ├── urls.py               # Main URL router
 │   └── wsgi.py
 ├── trips/
 │   ├── management/
 │   │   └── commands/
-│   │       └── load_fuel_stations.py # Ingestion command for Excel data
+│   │       └── load_fuel_stations.py # Ingestion command (atomic, CommandError)
 │   ├── services/
-│   │   ├── geocoding.py      # Nominatim geocoder + US boundary checks
+│   │   ├── geocoding.py      # Nominatim geocoder + US bounds + caching
 │   │   ├── osrm.py           # OSRM client (single call) & polyline decoder
-│   │   ├── corridor.py       # Haversine distance & corridor search
-│   │   └── optimizer.py      # Fuel stop optimizer (500 mi range, 10 MPG)
+│   │   ├── corridor.py       # Segment projection & corridor search
+│   │   └── optimizer.py      # Next-cheaper-station greedy optimizer
 │   ├── models.py             # FuelStation model with spatial indexes
-│   ├── views.py              # plan_route API endpoint
-│   ├── urls.py               # /api/route/ URL pattern
-│   └── tests.py              # Unit tests
-├── requirements.txt          # Dependencies
+│   ├── admin.py              # Django admin registration
+│   ├── views.py              # plan_route and health_check API endpoints
+│   ├── urls.py               # /api/route/ and /api/health/
+│   └── tests.py              # Comprehensive test suite
+├── fuel-prices-for-be-assessment.xlsx # Excel fuel prices dataset
+├── Dockerfile                # Multi-stage containerization
+├── docker-compose.yml        # Docker compose service with persisted volume
+├── entrypoint.sh             # Auto-migrates and loads fuel stations
+├── requirements.txt          # Python dependencies
 ├── manage.py
 └── README.md
 ```
 
 ---
 
-## Setup & Running Locally
-
-### 1. Set Up Environment
+## Quickstart with Docker (1 Command)
 
 ```bash
-git clone https://github.com/Dhakal29/Spotter_Labs_Assignment.git
-cd Spotter_Labs_Assignment
+docker compose up --build
+```
+The container will:
+1. Run all migrations.
+2. Ingest all 7,524 stations from the included Excel file into SQLite with atomic transactions.
+3. Start the server at `http://127.0.0.1:8000/`.
 
-# Virtual environment
+---
+
+## Quickstart Locally
+
+```bash
+# 1. Virtual environment & dependencies
 python3 -m venv .venv
 source .venv/bin/activate
-
-# Install dependencies
 pip install -r requirements.txt
-```
 
-### 2. Configure Environment Variables
-
-```bash
-cp .env.example .env
-```
-
-### 3. Run Migrations & Load Fuel Stations
-
-```bash
+# 2. Database migrations & load stations
 python manage.py migrate
 python manage.py load_fuel_stations --clear
-```
 
-### 4. Run Automated Tests
+# 3. Run test suite
+python manage.py test
 
-```bash
-python manage.py test trips
-```
-
-### 5. Start Development Server
-
-```bash
+# 4. Start local development server
 python manage.py runserver
 ```
 
@@ -103,16 +99,15 @@ python manage.py runserver
 
 ## API Reference
 
-### Plan Route
-
+### 1. Plan Route
 - **Endpoint:** `POST /api/route/`
 - **Headers:** `Content-Type: application/json`
 
-#### Request
+#### Request Body
 ```json
 {
-  "start": "Dallas, TX",
-  "finish": "Denver, CO"
+  "start": "Austin, TX",
+  "finish": "Dallas, TX"
 }
 ```
 
@@ -120,51 +115,41 @@ python manage.py runserver
 ```json
 {
   "start": {
+    "name": "Austin, TX",
+    "display_name": "Austin, Travis County, Texas, United States",
+    "lat": 30.2711286,
+    "lon": -97.7436995
+  },
+  "finish": {
     "name": "Dallas, TX",
     "display_name": "Dallas, Dallas County, Texas, United States",
     "lat": 32.7762719,
     "lon": -96.7968559
   },
-  "finish": {
-    "name": "Denver, CO",
-    "display_name": "Denver, Colorado, United States",
-    "lat": 39.7392364,
-    "lon": -104.984862
-  },
   "trip": {
-    "distance_miles": 795.05,
-    "duration_hours": 14.33,
+    "distance_miles": 195.2,
+    "duration_hours": 3.12,
     "mpg": 10.0,
     "max_vehicle_range_miles": 500.0
   },
   "fuel_optimization": {
-    "total_fuel_cost_usd": 101.52,
-    "total_gallons_purchased": 36.65,
-    "total_stops": 2,
-    "stops": [
-      {
-        "stop_number": 1,
-        "station_name": "7-ELEVEN #218",
-        "address": "US-287, MM 176",
-        "city": "Harrold",
-        "state": "TX",
-        "price_per_gallon": 2.687,
-        "mile_along_route": 160.8,
-        "gallons_refueled": 19.82,
-        "cost_usd": 53.26,
-        "coordinates": {
-          "latitude": 34.0841,
-          "longitude": -99.0345
-        }
-      }
-    ]
+    "total_fuel_cost_usd": 54.85,
+    "total_gallons_consumed": 19.52,
+    "total_gallons_purchased_en_route": 0.0,
+    "origin_fuel_price_usd": 2.81,
+    "total_stops": 0,
+    "stops": []
   },
   "map": {
-    "encoded_polyline": "u`_wEz}mpQ...",
+    "encoded_polyline": "...",
     "geojson": {
       "type": "LineString",
-      "coordinates": [[-96.7968, 32.7762], ...]
+      "coordinates": [[-97.7436, 30.2711], ...]
     }
   }
 }
 ```
+
+### 2. Health Check
+- **Endpoint:** `GET /api/health/`
+- **Response:** `{"status": "healthy", "service": "fuel-route-optimizer"}`
