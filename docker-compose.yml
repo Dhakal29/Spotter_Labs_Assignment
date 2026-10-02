@@ -1,0 +1,15 @@
+services:
+  web:
+    build: .
+    container_name: spotter_fuel_planner
+    ports:
+      - "8000:8000"
+    environment:
+      - SECRET_KEY=django-insecure-spotter-labs-production-secret-key-demo
+      - DEBUG=True
+      - ALLOWED_HOSTS=localhost,127.0.0.1,0.0.0.0,web
+      - OSRM_API_URL=https://router.project-osrm.org
+      - SQLITE_DB_PATH=/app/data/db.sqlite3
+    volumes:
+      - ./db_data:/app/data
+    restart: unless-stopped

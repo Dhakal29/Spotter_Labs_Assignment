@@ -1,4 +1,5 @@
 import requests
+from django.core.cache import cache
 
 # Bounding box for contiguous United States
 USA_BOUNDS = {
@@ -30,16 +31,16 @@ def geocode_place(location_name: str) -> dict:
     Geocodes a place name string (e.g. 'Austin, TX' or '90210') strictly within the USA.
     Ensures the matched location is a geographic destination (city, town, state, county, postcode),
     not a commercial point of interest like a restaurant or shop.
-    Returns a dict with:
-        - 'name': str
-        - 'display_name': str
-        - 'lat': float
-        - 'lon': float
-    Raises ValueError if the location is not found or is outside the USA.
+    Uses in-memory cache to prevent redundant external API calls and rate-limiting.
     """
     clean_name = location_name.strip()
     if not clean_name:
         raise ValueError("Location name cannot be empty.")
+
+    cache_key = f"geocode:{clean_name.lower()}"
+    cached_result = cache.get(cache_key)
+    if cached_result:
+        return cached_result
 
     params = {
         "q": clean_name,
@@ -93,10 +94,12 @@ def geocode_place(location_name: str) -> dict:
             f"Location '{location_name}' is outside the contiguous USA ({lat}, {lon})."
         )
 
-    return {
+    result = {
         "name": location_name,
         "display_name": selected_hit.get("display_name", location_name),
         "lat": lat,
         "lon": lon,
     }
+    cache.set(cache_key, result, timeout=86400)
+    return result
 

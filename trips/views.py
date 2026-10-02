@@ -35,6 +35,12 @@ def plan_route(request):
     start_input = data["start"].strip()
     finish_input = data["finish"].strip()
 
+    if start_input.lower() == finish_input.lower():
+        return JsonResponse(
+            {"error": "Start and finish locations cannot be the same."},
+            status=400,
+        )
+
     try:
         start_location = geocode_place(start_input)
     except ValueError as exc:
@@ -61,9 +67,23 @@ def plan_route(request):
     from .services.corridor import find_stations_along_route
     stations = find_stations_along_route(route_data["route_coordinates"])
 
-    # 3. Compute optimal fuel stops (greedy algorithm, 500-mi range, 10 MPG)
+    # 3. Compute optimal fuel stops (next-cheaper-station greedy algorithm, 500-mi range, 10 MPG)
     from .services.optimizer import optimize_fuel_stops
     fuel_plan = optimize_fuel_stops(route_data["total_distance_miles"], stations)
+
+    if not fuel_plan.get("is_feasible", True):
+        return JsonResponse(
+            {
+                "error": fuel_plan.get("error", "Route is physically infeasible with vehicle range."),
+                "trip": {
+                    "distance_miles": route_data["total_distance_miles"],
+                    "duration_hours": route_data["total_duration_hours"],
+                    "mpg": 10.0,
+                    "max_vehicle_range_miles": 500.0,
+                },
+            },
+            status=422,
+        )
 
     return JsonResponse(
         {
@@ -77,7 +97,9 @@ def plan_route(request):
             },
             "fuel_optimization": {
                 "total_fuel_cost_usd": fuel_plan["total_fuel_cost_usd"],
-                "total_gallons_purchased": fuel_plan["total_gallons_purchased"],
+                "total_gallons_consumed": fuel_plan["total_gallons_consumed"],
+                "total_gallons_purchased_en_route": fuel_plan["total_gallons_purchased_en_route"],
+                "origin_fuel_price_usd": fuel_plan.get("origin_fuel_price_usd"),
                 "total_stops": fuel_plan["total_stops"],
                 "stops": fuel_plan["fuel_stops"],
             },
@@ -87,5 +109,10 @@ def plan_route(request):
             },
         }
     )
+
+
+def health_check(request):
+    """Liveness probe for docker/kubernetes/monitors."""
+    return JsonResponse({"status": "healthy", "service": "fuel-route-optimizer"})
 
 
