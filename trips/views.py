@@ -45,10 +45,47 @@ def plan_route(request):
     except ValueError as exc:
         return JsonResponse({"error": f"Invalid finish location: {exc}"}, status=400)
 
+    # 1. Fetch driving route via OSRM (1 single API call)
+    try:
+        from .services.osrm import get_driving_route
+        route_data = get_driving_route(
+            start_lat=start_location["lat"],
+            start_lon=start_location["lon"],
+            finish_lat=finish_location["lat"],
+            finish_lon=finish_location["lon"],
+        )
+    except ValueError as exc:
+        return JsonResponse({"error": str(exc)}, status=502)
+
+    # 2. Find stations along the corridor (offline in local SQLite database)
+    from .services.corridor import find_stations_along_route
+    stations = find_stations_along_route(route_data["route_coordinates"])
+
+    # 3. Compute optimal fuel stops (greedy algorithm, 500-mi range, 10 MPG)
+    from .services.optimizer import optimize_fuel_stops
+    fuel_plan = optimize_fuel_stops(route_data["total_distance_miles"], stations)
+
     return JsonResponse(
         {
             "start": start_location,
             "finish": finish_location,
+            "trip": {
+                "distance_miles": route_data["total_distance_miles"],
+                "duration_hours": route_data["total_duration_hours"],
+                "mpg": 10.0,
+                "max_vehicle_range_miles": 500.0,
+            },
+            "fuel_optimization": {
+                "total_fuel_cost_usd": fuel_plan["total_fuel_cost_usd"],
+                "total_gallons_purchased": fuel_plan["total_gallons_purchased"],
+                "total_stops": fuel_plan["total_stops"],
+                "stops": fuel_plan["fuel_stops"],
+            },
+            "map": {
+                "encoded_polyline": route_data["encoded_polyline"],
+                "geojson": route_data["geojson"],
+            },
         }
     )
+
 
