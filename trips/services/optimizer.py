@@ -1,5 +1,5 @@
-import math
-from typing import List, Dict, Any, Optional
+# import math
+from typing import List, Dict, Any
 
 MAX_RANGE_MILES = 500.0
 MILES_PER_GALLON = 10.0
@@ -93,16 +93,16 @@ def optimize_fuel_stops(
     ]
     for s in filtered_stations:
         nodes.append({
-            "id": s["id"],
-            "opis_id": s["opis_id"],
-            "name": s["name"],
-            "address": s["address"],
-            "city": s["city"],
-            "state": s["state"],
-            "mile": s["mile_along_route"],
+            "id": s.get("id"),
+            "opis_id": s.get("opis_id", ""),
+            "name": s.get("name", "Fuel Station"),
+            "address": s.get("address", ""),
+            "city": s.get("city", ""),
+            "state": s.get("state", ""),
+            "mile": float(s["mile_along_route"]),
             "price": float(s["price"]),
-            "latitude": s["latitude"],
-            "longitude": s["longitude"],
+            "latitude": s.get("latitude", 0.0),
+            "longitude": s.get("longitude", 0.0),
         })
     dest_idx = len(nodes)
     nodes.append({"mile": total_distance_miles, "price": 0.0, "name": "DESTINATION"})
@@ -236,7 +236,9 @@ def optimize_fuel_stops(
                     "total_fuel_cost_usd": 0.0,
                 }
 
-            next_idx = min(reachable_now, key=lambda i: nodes[i]["price"])
+            # Advance to the cheapest station reachable with newly purchased fuel.
+            # On equal price, tie-break in favor of the furthest station along the route.
+            next_idx = min(reachable_now, key=lambda i: (nodes[i]["price"], -nodes[i]["mile"]))
             fuel_miles -= (nodes[next_idx]["mile"] - curr_node["mile"])
             curr_idx = next_idx
 

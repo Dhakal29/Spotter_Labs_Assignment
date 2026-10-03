@@ -1,10 +1,17 @@
 import json
 
 from django.http import JsonResponse
+from django.shortcuts import render
 from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.http import require_POST
 
 from .services.geocoding import geocode_place
+
+
+def map_view(request):
+    """Renders the interactive Leaflet map interface."""
+    return render(request, "index.html")
+
 
 
 @csrf_exempt
@@ -51,6 +58,9 @@ def plan_route(request):
     except ValueError as exc:
         return JsonResponse({"error": f"Invalid finish location: {exc}"}, status=400)
 
+    import time
+    start_time = time.perf_counter()
+
     # 1. Fetch driving route via OSRM (1 single API call)
     try:
         from .services.osrm import get_driving_route
@@ -71,6 +81,8 @@ def plan_route(request):
     from .services.optimizer import optimize_fuel_stops
     fuel_plan = optimize_fuel_stops(route_data["total_distance_miles"], stations)
 
+    elapsed_ms = round((time.perf_counter() - start_time) * 1000, 1)
+
     if not fuel_plan.get("is_feasible", True):
         return JsonResponse(
             {
@@ -80,6 +92,10 @@ def plan_route(request):
                     "duration_hours": route_data["total_duration_hours"],
                     "mpg": 10.0,
                     "max_vehicle_range_miles": 500.0,
+                },
+                "performance": {
+                    "execution_time_ms": elapsed_ms,
+                    "external_routing_calls": 1,
                 },
             },
             status=422,
@@ -106,6 +122,10 @@ def plan_route(request):
             "map": {
                 "encoded_polyline": route_data["encoded_polyline"],
                 "geojson": route_data["geojson"],
+            },
+            "performance": {
+                "execution_time_ms": elapsed_ms,
+                "external_routing_calls": 1,
             },
         }
     )

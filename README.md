@@ -151,10 +151,19 @@ python manage.py runserver
       "type": "LineString",
       "coordinates": [[-97.7436, 30.2711], ...]
     }
+  },
+  "performance": {
+    "execution_time_ms": 142.5,
+    "external_routing_calls": 1
   }
 }
 ```
 
-### 2. Health Check
+### 2. Interactive Map UI
+- **URL:** `http://localhost:8000/` or `http://localhost:8000/map/`
+- **Features:** Responsive Leaflet map visualizer with full polyline rendering, stop-by-stop refueling popups, and instant metric summaries.
+
+### 3. Health Check
 - **Endpoint:** `GET /api/health/`
 - **Response:** `{"status": "healthy", "service": "fuel-route-optimizer"}`
+

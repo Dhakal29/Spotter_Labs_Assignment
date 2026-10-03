@@ -1,0 +1,263 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Spotter Labs - Fuel-Optimized Route Planner</title>
+  <!-- Tailwind CSS CDN -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <!-- Leaflet CSS & JS -->
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <style>
+    #map { height: 100%; min-height: 520px; width: 100%; border-radius: 0.75rem; }
+    .custom-fuel-icon {
+      background: #10b981;
+      border: 2px solid #ffffff;
+      border-radius: 50%;
+      color: white;
+      font-weight: bold;
+      text-align: center;
+      line-height: 24px;
+      box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.2);
+    }
+  </style>
+</head>
+<body class="bg-slate-900 text-slate-100 min-h-screen flex flex-col font-sans">
+
+  <!-- Header -->
+  <header class="bg-slate-800 border-b border-slate-700 py-4 px-6 flex items-center justify-between shadow-md">
+    <div class="flex items-center space-x-3">
+      <div class="w-10 h-10 rounded-lg bg-emerald-500 flex items-center justify-center text-white font-black text-xl shadow-lg">
+        ⛽
+      </div>
+      <div>
+        <h1 class="text-xl font-bold tracking-tight text-white">Spotter Labs Fuel Route Planner</h1>
+        <p class="text-xs text-slate-400">500-mile vehicle range &bull; 10 MPG &bull; 1 External Routing Call</p>
+      </div>
+    </div>
+    <div class="flex items-center space-x-3 text-xs">
+      <span class="inline-flex items-center px-2.5 py-1 rounded-full font-medium bg-emerald-500/10 text-emerald-400 border border-emerald-500/30">
+        ● OSRM Fast Routing
+      </span>
+      <span class="inline-flex items-center px-2.5 py-1 rounded-full font-medium bg-blue-500/10 text-blue-400 border border-blue-500/30">
+        7,524 OPIS Stations
+      </span>
+    </div>
+  </header>
+
+  <!-- Main Content Layout -->
+  <main class="flex-1 max-w-7xl w-full mx-auto p-4 sm:p-6 grid grid-cols-1 lg:grid-cols-12 gap-6">
+
+    <!-- Left Control Panel -->
+    <div class="lg:col-span-4 flex flex-col space-y-4">
+      <div class="bg-slate-800/90 border border-slate-700 rounded-xl p-5 shadow-lg backdrop-blur">
+        <h2 class="text-base font-semibold text-slate-200 mb-3 flex items-center">
+          <svg class="w-4 h-4 mr-2 text-emerald-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 20l-5.447-2.724A1 1 0 013 16.382V5.618a1 1 0 011.447-.894L9 7m0 13l6-3m-6 3V7m6 10l4.553 2.276A1 1 0 0021 18.382V7.618a1 1 0 00-.553-.894L15 4m0 13V4m0 0L9 7"></path></svg>
+          Trip Configuration
+        </h2>
+
+        <form id="routeForm" class="space-y-3">
+          <div>
+            <label class="block text-xs font-medium text-slate-300 mb-1">Start Location (USA)</label>
+            <input type="text" id="startInput" value="New York, NY" required placeholder="e.g. New York, NY or Austin, TX"
+              class="w-full bg-slate-900 border border-slate-600 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-transparent transition" />
+          </div>
+
+          <div>
+            <label class="block text-xs font-medium text-slate-300 mb-1">Finish Location (USA)</label>
+            <input type="text" id="finishInput" value="Los Angeles, CA" required placeholder="e.g. Los Angeles, CA or Miami, FL"
+              class="w-full bg-slate-900 border border-slate-600 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-transparent transition" />
+          </div>
+
+          <div class="pt-2 flex items-center space-x-2">
+            <button type="submit" id="submitBtn"
+              class="flex-1 bg-emerald-600 hover:bg-emerald-500 active:bg-emerald-700 text-white font-semibold py-2.5 px-4 rounded-lg text-sm shadow-md transition flex items-center justify-center">
+              <span>Calculate Optimal Route</span>
+            </button>
+            <button type="button" id="quickSwapBtn" title="Swap start and finish"
+              class="bg-slate-700 hover:bg-slate-600 p-2.5 rounded-lg text-slate-300 transition">
+              ⇄
+            </button>
+          </div>
+        </form>
+
+        <div class="mt-4 pt-4 border-t border-slate-700 text-xs text-slate-400 space-y-1">
+          <div class="flex justify-between"><span>Max Tank Range:</span> <span class="font-medium text-slate-200">500.0 miles</span></div>
+          <div class="flex justify-between"><span>Fuel Economy:</span> <span class="font-medium text-slate-200">10.0 MPG</span></div>
+          <div class="flex justify-between"><span>Tank Capacity:</span> <span class="font-medium text-slate-200">50.0 gallons</span></div>
+        </div>
+      </div>
+
+      <!-- Live Trip Summary Card -->
+      <div id="summaryCard" class="hidden bg-slate-800/90 border border-slate-700 rounded-xl p-5 shadow-lg flex-1 flex flex-col">
+        <h2 class="text-base font-semibold text-slate-200 mb-3 flex items-center">
+          <svg class="w-4 h-4 mr-2 text-emerald-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
+          Trip & Refueling Summary
+        </h2>
+
+        <div class="grid grid-cols-2 gap-3 mb-4">
+          <div class="bg-slate-900/80 p-3 rounded-lg border border-slate-700/60">
+            <div class="text-[11px] text-slate-400 uppercase font-semibold">Total Distance</div>
+            <div id="summaryDistance" class="text-lg font-bold text-white mt-0.5">-- mi</div>
+          </div>
+          <div class="bg-slate-900/80 p-3 rounded-lg border border-slate-700/60">
+            <div class="text-[11px] text-slate-400 uppercase font-semibold">Total Fuel Cost</div>
+            <div id="summaryCost" class="text-lg font-bold text-emerald-400 mt-0.5">$0.00</div>
+          </div>
+          <div class="bg-slate-900/80 p-3 rounded-lg border border-slate-700/60">
+            <div class="text-[11px] text-slate-400 uppercase font-semibold">Fuel Stops</div>
+            <div id="summaryStops" class="text-lg font-bold text-white mt-0.5">0</div>
+          </div>
+          <div class="bg-slate-900/80 p-3 rounded-lg border border-slate-700/60">
+            <div class="text-[11px] text-slate-400 uppercase font-semibold">Response Time</div>
+            <div id="summaryPerf" class="text-lg font-bold text-blue-400 mt-0.5">-- ms</div>
+          </div>
+        </div>
+
+        <div class="text-xs font-semibold uppercase text-slate-400 mb-2">Recommended Fuel Stops</div>
+        <div id="stopsList" class="flex-1 overflow-y-auto space-y-2 pr-1 max-h-64 text-xs">
+          <!-- Stops dynamically injected -->
+        </div>
+      </div>
+
+      <!-- Error Box -->
+      <div id="errorCard" class="hidden bg-red-900/30 border border-red-500/50 rounded-xl p-4 text-xs text-red-200 shadow-lg">
+        <div class="font-semibold text-red-300 mb-1" id="errorTitle">Request Failed</div>
+        <div id="errorMessage"></div>
+      </div>
+    </div>
+
+    <!-- Right Map View -->
+    <div class="lg:col-span-8 flex flex-col">
+      <div class="bg-slate-800 border border-slate-700 rounded-xl p-2 shadow-lg flex-1 flex flex-col min-h-[520px]">
+        <div id="map"></div>
+      </div>
+    </div>
+  </main>
+
+  <!-- Interactive JavaScript -->
+  <script>
+    // Initialize Leaflet map
+    const map = L.map('map').setView([39.8283, -98.5795], 4); // Contiguous USA center
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+      maxZoom: 18,
+      attribution: '© OpenStreetMap contributors'
+    }).addTo(map);
+
+    let routeLayer = null;
+    let markersLayer = L.layerGroup().addTo(map);
+
+    document.getElementById('quickSwapBtn').addEventListener('click', () => {
+      const s = document.getElementById('startInput');
+      const f = document.getElementById('finishInput');
+      const tmp = s.value;
+      s.value = f.value;
+      f.value = tmp;
+    });
+
+    document.getElementById('routeForm').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const start = document.getElementById('startInput').value.trim();
+      const finish = document.getElementById('finishInput').value.trim();
+      const submitBtn = document.getElementById('submitBtn');
+      const errorCard = document.getElementById('errorCard');
+      const summaryCard = document.getElementById('summaryCard');
+
+      errorCard.classList.add('hidden');
+      submitBtn.disabled = true;
+      submitBtn.innerHTML = '<span>Planning optimal route...</span>';
+
+      try {
+        const response = await fetch('/api/route/', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ start, finish })
+        });
+
+        const data = await response.json();
+
+        if (!response.ok) {
+          throw new Error(data.error || 'Failed to plan route.');
+        }
+
+        // Render Summary
+        summaryCard.classList.remove('hidden');
+        document.getElementById('summaryDistance').textContent = `${data.trip.distance_miles.toFixed(1)} mi`;
+        document.getElementById('summaryCost').textContent = `$${data.fuel_optimization.total_fuel_cost_usd.toFixed(2)}`;
+        document.getElementById('summaryStops').textContent = data.fuel_optimization.total_stops;
+        document.getElementById('summaryPerf').textContent = `${data.performance ? data.performance.execution_time_ms : '--'} ms`;
+
+        // Render Stops
+        const stopsList = document.getElementById('stopsList');
+        stopsList.innerHTML = '';
+
+        markersLayer.clearLayers();
+
+        // Add start and finish markers
+        const startIcon = L.circleMarker([data.start.lat, data.start.lon], { radius: 8, color: '#3b82f6', fillColor: '#3b82f6', fillOpacity: 0.9 }).addTo(markersLayer);
+        startIcon.bindPopup(`<b>Origin:</b> ${data.start.display_name}`);
+
+        const finishIcon = L.circleMarker([data.finish.lat, data.finish.lon], { radius: 8, color: '#ef4444', fillColor: '#ef4444', fillOpacity: 0.9 }).addTo(markersLayer);
+        finishIcon.bindPopup(`<b>Destination:</b> ${data.finish.display_name}`);
+
+        const stops = data.fuel_optimization.stops || [];
+        if (stops.length === 0) {
+          stopsList.innerHTML = '<div class="text-slate-400 italic py-2">Trip is within the initial 500-mile tank range. Zero en-route refuel stops required!</div>';
+        } else {
+          stops.forEach((stop, index) => {
+            const lat = stop.coordinates.latitude;
+            const lon = stop.coordinates.longitude;
+
+            // Map pin
+            const marker = L.marker([lat, lon]).addTo(markersLayer);
+            marker.bindPopup(`
+              <div style="font-size: 13px; line-height: 1.4;">
+                <b style="color: #059669;">Stop #${stop.stop_number}: ${stop.station_name}</b><br>
+                <span>${stop.address}, ${stop.city}, ${stop.state}</span><br>
+                <b>Price:</b> $${stop.price_per_gallon.toFixed(3)}/gal<br>
+                <b>Refueled:</b> ${stop.gallons_refueled.toFixed(2)} gal ($${stop.cost_usd.toFixed(2)})<br>
+                <b>Route Mile:</b> ${stop.mile_along_route} mi
+              </div>
+            `);
+
+            // List item
+            const item = document.createElement('div');
+            item.className = 'bg-slate-900/90 border border-slate-700/80 rounded-lg p-2.5 flex justify-between items-center';
+            item.innerHTML = `
+              <div>
+                <div class="font-semibold text-emerald-400">#${stop.stop_number} ${stop.station_name}</div>
+                <div class="text-[11px] text-slate-400">${stop.city}, ${stop.state} &bull; Mile ${stop.mile_along_route}</div>
+              </div>
+              <div class="text-right">
+                <div class="font-bold text-white">$${stop.price_per_gallon.toFixed(2)}/gal</div>
+                <div class="text-[11px] text-emerald-300">+${stop.gallons_refueled} gal ($${stop.cost_usd})</div>
+              </div>
+            `;
+            stopsList.appendChild(item);
+          });
+        }
+
+        // Render Route Polyline
+        if (routeLayer) {
+          map.removeLayer(routeLayer);
+        }
+
+        if (data.map && data.map.geojson) {
+          routeLayer = L.geoJSON(data.map.geojson, {
+            style: { color: '#10b981', weight: 4, opacity: 0.85 }
+          }).addTo(map);
+          map.fitBounds(routeLayer.getBounds(), { padding: [40, 40] });
+        }
+
+      } catch (err) {
+        errorCard.classList.remove('hidden');
+        document.getElementById('errorMessage').textContent = err.message;
+      } finally {
+        submitBtn.disabled = false;
+        submitBtn.innerHTML = '<span>Calculate Optimal Route</span>';
+      }
+    });
+  </script>
+</body>
+</html>

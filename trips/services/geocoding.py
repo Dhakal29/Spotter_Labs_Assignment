@@ -56,6 +56,7 @@ def geocode_place(location_name: str) -> dict:
         response = requests.get(NOMINATIM_URL, params=params, headers=HEADERS, timeout=6)
         response.raise_for_status()
         results = response.json()
+        print(f"Geocoding results for '{location_name}': {results}")
     except requests.RequestException as exc:
         raise ValueError(f"Geocoding service unavailable: {exc}") from exc
 

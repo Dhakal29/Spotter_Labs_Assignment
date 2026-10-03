@@ -158,3 +158,49 @@ class APIRouteEndpointTests(TestCase):
         response = self.client.get("/api/health/")
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.json()["status"], "healthy")
+
+    def test_map_page_renders_html_200(self):
+        """Web UI returns 200 OK with Leaflet map container."""
+        response = self.client.get("/")
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "Spotter Labs Fuel Route Planner")
+        self.assertContains(response, "id=\"map\"")
+
+    def test_short_trip_zero_stops_and_correct_consumption(self):
+        """A short 80-mile trip should not crash, requires 0 stops, and consumes exactly 8.0 gallons."""
+        result = optimize_fuel_stops(total_distance_miles=80.0, stations=[])
+        self.assertTrue(result["is_feasible"])
+        self.assertEqual(result["total_stops"], 0)
+        self.assertEqual(result["fuel_stops"], [])
+        self.assertEqual(result["total_gallons_consumed"], 8.0)
+        self.assertEqual(result["total_gallons_purchased_en_route"], 0.0)
+
+    def test_strict_500_mile_feasibility_and_tank_capacity_bounds(self):
+        """
+        Verify that:
+        1. Gallons refueled at any single stop never exceeds 50.0 gallons (tank capacity).
+        2. Every leg between consecutive stops is strictly <= 500 miles.
+        3. Total gallons consumed matches total distance / 10 MPG.
+        """
+        trip_distance = 1350.0
+        stations = [
+            {"id": 1, "name": "Stop 1", "mile_along_route": 400.0, "price": 3.40},
+            {"id": 2, "name": "Stop 2", "mile_along_route": 750.0, "price": 3.10},
+            {"id": 3, "name": "Stop 3", "mile_along_route": 1100.0, "price": 3.60},
+        ]
+        result = optimize_fuel_stops(total_distance_miles=trip_distance, stations=stations)
+        self.assertTrue(result["is_feasible"])
+        self.assertEqual(result["total_gallons_consumed"], 135.0)
+
+        prev_mile = 0.0
+        for stop in result["fuel_stops"]:
+            stop_mile = stop["mile_along_route"]
+            leg_distance = stop_mile - prev_mile
+            self.assertLessEqual(leg_distance, 500.0, f"Leg from {prev_mile} to {stop_mile} exceeded 500 miles!")
+            self.assertLessEqual(stop["gallons_refueled"], 50.0, f"Gallons refueled at {stop['station_name']} exceeded 50-gallon tank capacity!")
+            self.assertGreater(stop["gallons_refueled"], 0.0)
+            prev_mile = stop_mile
+
+        # Final leg to destination must also be <= 500 miles
+        self.assertLessEqual(trip_distance - prev_mile, 500.0)
+
